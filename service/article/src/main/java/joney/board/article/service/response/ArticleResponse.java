@@ -3,12 +3,13 @@ package joney.board.article.service.response;
 import jakarta.persistence.Id;
 import joney.board.article.entity.Article;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.ToString;
-
 import java.time.LocalDateTime;
 
 @Getter
 @ToString
+@NoArgsConstructor
 public class ArticleResponse {
     @Id
     private Long articleId;
