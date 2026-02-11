@@ -8,6 +8,8 @@ import joney.board.article.service.response.ArticleResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/v1")
@@ -40,5 +42,12 @@ public class ArticleController {
     @DeleteMapping("/articles/{articleId}")
     public void delete(@PathVariable Long articleId){
         articleService.delete(articleId);
+    }
+
+    @GetMapping("/articles/infinite-scroll")
+    public List<ArticleResponse> readAllInfiniteScroll(@RequestParam("boardId") Long boardId,
+                                                       @RequestParam("pageSize") Long pageSize,
+                                                       @RequestParam(value = "lastArticleId", required = false) Long lastArticleId){
+        return articleService.readAllInfiniteScroll(boardId, pageSize, lastArticleId);
     }
 }
