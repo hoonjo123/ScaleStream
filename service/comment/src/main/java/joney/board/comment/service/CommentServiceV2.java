@@ -1,26 +1,33 @@
 package joney.board.comment.service;
 
-import jakarta.transaction.Transactional;
+import jdk.jfr.EventType;
+import joney.board.comment.entity.ArticleCommentCount;
 import joney.board.comment.entity.Comment;
 import joney.board.comment.entity.CommentPath;
 import joney.board.comment.entity.CommentV2;
+import joney.board.comment.repository.ArticleCommentCountRepository;
 import joney.board.comment.repository.CommentRepositoryV2;
 import joney.board.comment.service.request.CommentCreateRequestV2;
+import joney.board.comment.service.response.CommentPageResponse;
 import joney.board.comment.service.response.CommentResponse;
 import kuke.board.common.snowflake.Snowflake;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 import static java.util.function.Predicate.not;
 
-@RequiredArgsConstructor
 @Service
+@RequiredArgsConstructor
 public class CommentServiceV2 {
     private final Snowflake snowflake = new Snowflake();
     private final CommentRepositoryV2 commentRepository;
+    private final ArticleCommentCountRepository articleCommentCountRepository;
 
-    @Transactional
-    public CommentResponse create(CommentCreateRequestV2 request){
+    @org.springframework.transaction.annotation.Transactional
+    public CommentResponse create(CommentCreateRequestV2 request) {
         CommentV2 parent = findParent(request);
         CommentPath parentCommentPath = parent == null ? CommentPath.create("") : parent.getCommentPath();
         CommentV2 comment = commentRepository.save(
@@ -36,6 +43,12 @@ public class CommentServiceV2 {
                 )
         );
 
+        int result = articleCommentCountRepository.increase(request.getArticleId());
+        if (result == 0) {
+            articleCommentCountRepository.save(
+                    ArticleCommentCount.init(request.getArticleId(), 1L)
+            );
+        }
         return CommentResponse.from(comment);
     }
 
@@ -60,8 +73,8 @@ public class CommentServiceV2 {
         commentRepository.findById(commentId)
                 .filter(not(CommentV2::getDeleted))
                 .ifPresent(comment -> {
-                    if(hasChildren(comment)){
-                        comment.delete();;
+                    if(hasChildren(comment)) {
+                        comment.delete();
                     } else {
                         delete(comment);
                     }
@@ -75,13 +88,39 @@ public class CommentServiceV2 {
         ).isPresent();
     }
 
-    private void delete(CommentV2 comment){
+    private void delete(CommentV2 comment) {
         commentRepository.delete(comment);
-        if (!comment.isRoot()){
+        articleCommentCountRepository.decrease(comment.getArticleId());
+        if (!comment.isRoot()) {
             commentRepository.findByPath(comment.getCommentPath().getParentPath())
                     .filter(CommentV2::getDeleted)
                     .filter(not(this::hasChildren))
                     .ifPresent(this::delete);
         }
+    }
+
+    public CommentPageResponse readAll(Long articleId, Long page, Long pageSize) {
+        return CommentPageResponse.of(
+                commentRepository.findAll(articleId, (page - 1) * pageSize, pageSize).stream()
+                        .map(CommentResponse::from)
+                        .toList(),
+                commentRepository.count(articleId, PageLimitCalculator.calculatePageLimit(page, pageSize, 10L))
+        );
+    }
+
+    public List<CommentResponse> readAllInfiniteScroll(Long articleId, String lastPath, Long pageSize) {
+        List<CommentV2> comments = lastPath == null ?
+                commentRepository.findAllInfiniteScroll(articleId, pageSize) :
+                commentRepository.findAllInfiniteScroll(articleId, lastPath, pageSize);
+
+        return comments.stream()
+                .map(CommentResponse::from)
+                .toList();
+    }
+
+    public Long count(Long articleId) {
+        return articleCommentCountRepository.findById(articleId)
+                .map(ArticleCommentCount::getCommentCount)
+                .orElse(0L);
     }
 }
